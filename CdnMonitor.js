@@ -5,9 +5,7 @@ var path = require ("path");
 
 class CdnMonitor {
     constructor(config){
-        this.domainList = [
-            'static-www.isekai.cn'
-        ];
+        this.domainList = config.domainList;
 
         this.statusFile = config.outputFile || './cdnStatus.json';
         this.session = ping.createSession({
@@ -22,12 +20,16 @@ class CdnMonitor {
 
     getARecord(domain){
         return new Promise((resolve, reject) => {
-            dns.resolve4(domain, (err, ip) => {
-                if(err){
-                    return reject(err);
-                }
-                resolve(ip);
-            });
+            if(this.isIp(domain)){
+                resolve(domain);
+            } else {
+                dns.resolve4(domain, (err, ip) => {
+                    if(err){
+                        return reject(err);
+                    }
+                    resolve(ip[0]);
+                });
+            }
         });
     }
 
@@ -48,6 +50,10 @@ class CdnMonitor {
         return (new Date).toLocaleString();
     }
 
+    isIp(str){
+        return !!str.match(/^(1\d{2}|2[0-4]\d|25[0-5]|[1-9]\d|[1-9])\.(1\d{2}|2[0-4]\d|25[0-5]|[1-9]\d|\d)\.(1\d{2}|2[0-4]\d|25[0-5]|[1-9]\d|\d)\.(1\d{2}|2[0-4]\d|25[0-5]|[1-9]\d|\d)$/);
+    }
+
     log(message){
         console.log(this.getTimeString() + ' - ' + message);
     }
@@ -61,7 +67,7 @@ class CdnMonitor {
         let ipList = await Promise.all(nslookupPromises);
         for(let i = 0; i < ipList.length; i ++){
             let domain = this.domainList[i];
-            let ip = ipList[i][0];
+            let ip = ipList[i];
 
             let delayCount = 0;
             let receivedPkg = 0;
@@ -84,7 +90,11 @@ class CdnMonitor {
             statusList[domain] = {delay: avgDelay, loss: lostPkg};
         }
 
-        fs.writeFileSync(this.statusFile, JSON.stringify(statusList, null, 4));
+        this.onSaveStatus(statusList);
+    }
+
+    onSaveStatus(status){
+        fs.writeFileSync(this.statusFile, JSON.stringify(status, null, 4));
     }
 
     registerInterval(){
